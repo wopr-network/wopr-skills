@@ -23,7 +23,20 @@ wopr skill install github:TSavo/wopr-skills/skills/<skill-name>
 
 | Skill | Description |
 |-------|-------------|
-| `wopr` | WOPR CLI commands for session management, skills, plugins, and inter-agent communication |
+| `wopr` | Complete WOPR CLI reference - all commands for sessions, skills, plugins, providers, middleware |
+| `meta-wopr` | Installation, configuration, daemon setup, Docker deployment, troubleshooting |
+| `wopr-security` | Security model - trust levels, capabilities, sandbox isolation, gateway sessions |
+| `wopr-p2p` | P2P networking - Hyperswarm, identity, discovery, access grants, security scenarios |
+
+## Quick Install All
+
+```bash
+wopr skill registry add wopr github:TSavo/wopr-skills/skills
+wopr skill install github:TSavo/wopr-skills/skills/wopr
+wopr skill install github:TSavo/wopr-skills/skills/meta-wopr
+wopr skill install github:TSavo/wopr-skills/skills/wopr-security
+wopr skill install github:TSavo/wopr-skills/skills/wopr-p2p
+```
 
 ## Contributing
 
