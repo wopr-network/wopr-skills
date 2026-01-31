@@ -207,7 +207,7 @@ These tools are available to agents within WOPR sessions:
 - `event_unsubscribe` - Unsubscribe from events
 
 ### Network
-- `http_fetch` - Make HTTP requests (requires inject.network capability)
+- `http_fetch` - Make HTTP requests with arbitrary headers (Authorization, API keys, etc.). Options: `url`, `method`, `headers`, `body`, `timeout`, `includeHeaders`
 
 ### Execution
 - `exec_command` - Execute shell commands (requires inject.exec capability)
