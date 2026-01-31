@@ -86,6 +86,22 @@ wopr cron now <session> <message>         # Run immediately (no scheduling)
 wopr cron remove <name>                   # Remove a cron job
 ```
 
+### Cron History (A2A Tool)
+
+Agents can view execution history using the `cron_history` tool:
+
+```
+cron_history                              # View recent executions
+cron_history name="job-name"              # Filter by job name
+cron_history session="target-session"     # Filter by target session
+cron_history failedOnly=true              # Show only failures
+cron_history successOnly=true             # Show only successes
+cron_history since=1706745600000          # Filter by timestamp (ms)
+cron_history limit=10 offset=20           # Pagination
+```
+
+Returns: timestamp, job name, session, status, duration, error (if failed), and full message.
+
 ## Configuration
 
 ```bash
@@ -161,3 +177,40 @@ wopr skill install github:TSavo/wopr-skills/skills/git-essentials
 ```bash
 wopr session set-provider my-session anthropic --model claude-sonnet-4-5-20250929
 ```
+
+## A2A Tools Reference
+
+These tools are available to agents within WOPR sessions:
+
+### Session Management
+- `sessions_list` - List all sessions
+- `sessions_spawn` - Create a new session (requires session.spawn capability)
+- `sessions_send` - Send message to another session (requires cross.inject capability)
+- `sessions_terminate` - Terminate a session
+
+### Cron/Scheduling
+- `cron_schedule` - Schedule a recurring cron job
+- `cron_once` - Schedule a one-time job
+- `cron_list` - List all scheduled cron jobs
+- `cron_cancel` - Cancel a scheduled cron job
+- `cron_history` - View cron execution history with filtering and pagination
+
+### Memory
+- `memory_read` - Read from persistent memory
+- `memory_write` - Write to persistent memory
+- `memory_list` - List memory keys
+- `memory_delete` - Delete memory entries
+
+### Events
+- `event_emit` - Emit a custom event
+- `event_subscribe` - Subscribe to events
+- `event_unsubscribe` - Unsubscribe from events
+
+### Network
+- `http_fetch` - Make HTTP requests (requires inject.network capability)
+
+### Execution
+- `exec_command` - Execute shell commands (requires inject.exec capability)
+
+### Utility
+- `security_whoami` - Show current trust level and capabilities

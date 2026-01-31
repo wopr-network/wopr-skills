@@ -172,13 +172,22 @@ wopr p2p connect <peer-id>
 
 ### Messaging
 
-```bash
-# Send message to a peer
-wopr p2p send alice --session main --message "Hello!"
+Two modes of P2P messaging:
 
-# Send with custom timeout
-wopr p2p send alice --session main --message "Hello!" --timeout 30s
+```bash
+# LOG MODE: Fire-and-forget (message stored in peer's session history)
+wopr p2p log alice --session main --message "FYI: deployment complete"
+
+# INJECT MODE: Invoke peer's AI and get response
+wopr p2p inject alice --session main --message "What's the status of the build?"
+
+# With custom timeout (inject can take longer due to AI processing)
+wopr p2p inject alice --session main --message "Analyze this code" --timeout 300s
 ```
+
+**When to use which:**
+- `log` - Notifications, status updates, fire-and-forget messages
+- `inject` - Questions, tasks, anything needing an AI response
 
 ---
 
@@ -231,8 +240,15 @@ The plugin registers tools for agent-to-agent communication:
 
 | Tool | Description |
 |------|-------------|
-| `p2p_send_message` | Send encrypted message |
+| `p2p_log_message` | Log message to peer's session (fire-and-forget, no AI response) |
+| `p2p_inject_message` | Inject message and invoke peer's AI (get response back) |
 | `p2p_status` | Get P2P network status |
+
+### Session History (Mirror Access)
+
+| Tool | Description |
+|------|-------------|
+| `sessions_history` | Read session history with pagination. Use `full=true` for complete untruncated mirror |
 
 ---
 
@@ -713,6 +729,49 @@ wopr p2p grants --peer alice
 | 5 | `EXIT_VERSION_MISMATCH` | Protocol version mismatch |
 | 6 | `EXIT_PEER_OFFLINE` | Specific peer offline |
 | 7 | `EXIT_UNAUTHORIZED` | Not authorized |
+
+---
+
+## Session Mirror
+
+Sessions are **permanent records** - they never compact or truncate. The AI's context window may summarize, but the session file (`*.conversation.jsonl`) contains every message forever.
+
+### Accessing the Full Mirror
+
+```bash
+# Quick summary (truncated, last 10 messages)
+sessions_history(session="my-session")
+
+# Full mirror with pagination
+sessions_history(session="my-session", full=true)              # First 100 messages
+sessions_history(session="my-session", full=true, offset=100)  # Next 100
+sessions_history(session="my-session", full=true, limit=50)    # 50 per page
+```
+
+**Response format (full mode):**
+```json
+{
+  "session": "my-session",
+  "total": 847,
+  "offset": 0,
+  "pageSize": 100,
+  "returned": 100,
+  "hasMore": true,
+  "nextOffset": 100,
+  "history": [
+    {
+      "ts": 1234567890,
+      "iso": "2024-01-15T12:00:00.000Z",
+      "from": "user",
+      "type": "message",
+      "content": "Complete untruncated content...",
+      "channel": { "type": "p2p", "id": "..." }
+    }
+  ]
+}
+```
+
+**Key insight:** Even when the AI's working memory compacts, the session file remains complete. Use `sessions_history(full=true)` to access the full record.
 
 ---
 
