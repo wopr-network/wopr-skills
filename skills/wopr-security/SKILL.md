@@ -1,6 +1,6 @@
 ---
 name: wopr-security
-description: WOPR security configuration reference covering trust levels, capabilities, sandbox isolation, gateway sessions, and multi-agent security best practices.
+description: WOPR security configuration reference covering trust levels, capabilities, sandbox isolation, access patterns, and session security.
 ---
 
 # WOPR Security Configuration
@@ -13,15 +13,15 @@ Trust levels determine the base security context for any injection source.
 
 | Level | Source | Default Behavior |
 |-------|--------|------------------|
-| `owner` | CLI, daemon, local | Full access to all capabilities |
-| `trusted` | Explicit P2P grants, verified users | Scoped access per grant configuration |
-| `semi-trusted` | Channel users, time-limited P2P | Limited tools, optional sandbox |
-| `untrusted` | P2P discovery, unknown sources | Sandboxed, minimal tools, gateway only |
+| `owner` | CLI, daemon, cron, internal | Full access to all capabilities |
+| `trusted` | Plugins, verified users | Scoped access per configuration |
+| `semi-trusted` | API, gateway forwarded | Limited tools, optional sandbox |
+| `untrusted` | P2P discovery, unknown sources | Sandboxed, minimal tools |
 
 ### Trust Level Hierarchy
 
 ```
-owner > trusted > semi-trusted > untrusted
+owner (100) > trusted (75) > semi-trusted (50) > untrusted (0)
 ```
 
 Higher trust levels can grant capabilities to lower levels. Lower trust levels cannot escalate their own privileges.
@@ -35,76 +35,130 @@ Capabilities control what actions a session or agent can perform.
 | Capability | Description |
 |------------|-------------|
 | `inject` | Send messages to sessions |
-| `inject.tools` | Use MCP tools during execution |
+| `inject.tools` | Use A2A tools during execution |
 | `inject.network` | Make HTTP requests (`http_fetch`) |
 | `inject.exec` | Execute shell commands (`exec_command`) |
 | `session.spawn` | Create new sessions |
+| `session.history` | Read own session history |
 | `cross.inject` | Inject messages into other sessions |
+| `cross.read` | Read other sessions' history |
+| `config.read` | Read configuration |
 | `config.write` | Modify WOPR configuration |
+| `memory.read` | Read memory files |
+| `memory.write` | Write memory files |
+| `cron.manage` | Create/delete cron jobs |
+| `event.emit` | Emit events |
 | `a2a.call` | Use agent-to-agent communication tools |
+| `*` | Wildcard - all capabilities |
 
 ### Capability Profiles by Trust Level
 
-```bash
-# Owner: Full access
+```javascript
+// Owner: Full access
 owner: ["*"]
 
-# Trusted: Scoped operational access
-trusted: ["inject", "inject.tools", "session.spawn", "a2a.call"]
+// Trusted: Operational access
+trusted: ["inject", "inject.tools", "session.spawn", "session.history",
+          "memory.read", "memory.write", "config.read", "event.emit", "a2a.call"]
 
-# Semi-trusted: Basic interaction only
-semi-trusted: ["inject", "inject.tools"]
+// Semi-trusted: Limited interaction
+"semi-trusted": ["inject", "inject.tools", "session.history",
+                 "memory.read", "config.read", "a2a.call"]
 
-# Untrusted: Message injection only (no tool use)
+// Untrusted: Message injection only (no tools)
 untrusted: ["inject"]
+
+// Gateway: Cross-session forwarding
+gateway: ["inject", "inject.tools", "cross.inject", "cross.read",
+          "session.history", "memory.read", "a2a.call"]
 ```
 
-### Granting Capabilities
+## Session Security Configuration
+
+### CLI Commands
 
 ```bash
-# Grant specific capabilities to a peer
-wopr security grant <peer-key> inject,inject.tools,a2a.call
+# View security status
+wopr security status
 
-# Use a preset profile
-wopr security grant <peer-key> --profile trusted
-wopr security grant <peer-key> --profile semi-trusted
+# Set enforcement mode
+wopr security enforcement off    # No enforcement (testing)
+wopr security enforcement warn   # Log violations but allow (migration)
+wopr security enforcement enforce # Block violations (production)
 
-# Revoke all access
-wopr security revoke <peer-key>
+# List all session configs
+wopr security sessions
 
-# List current grants
-wopr security list-grants
+# View specific session config
+wopr security session <name>
+
+# Configure session properties
+wopr security session <name> <property> <value>
 ```
 
-## Session Provider Security
+### Session Properties
 
-WOPR supports per-session model selection, allowing different trust levels to use different AI providers.
+#### Access Patterns
 
-### Per-Session Provider Configuration
+Control who can inject into a session:
 
 ```bash
-# Set provider for a specific session
-wopr session set-provider gateway-session openai --model gpt-4o
+# Allow anyone
+wopr security session gateway access "*"
 
-# Set provider with fallback chain
-wopr session set-provider code-executor anthropic --model claude-sonnet-4-20250514 --fallback openai:gpt-4o
+# Only trusted and above
+wopr security session main access "trust:trusted"
 
-# Create session with specific provider
-wopr session create sandbox-agent "You are a sandboxed assistant" --provider openai
+# Allow untrusted (for gateway sessions)
+wopr security session public-api access "trust:untrusted"
+
+# Specific P2P peer
+wopr security session alice access "p2p:MCoxK8f2..."
 ```
 
-### Provider Trust Considerations
+#### Indexable Patterns
 
-| Trust Level | Recommended Provider Strategy |
-|-------------|------------------------------|
-| `owner` | Use premium models (Claude Opus, GPT-4) for complex tasks |
-| `trusted` | Standard models with rate limiting |
-| `semi-trusted` | Cost-efficient models, lower token limits |
-| `untrusted` | Sandboxed sessions only, minimal model access |
+Control which session transcripts THIS session can see in memory search:
+
+```bash
+# Can see all sessions' transcripts
+wopr security session admin indexable "*"
+
+# Can only see own transcripts
+wopr security session p2p-peer indexable "self"
+
+# Self plus specific pattern
+wopr security session gateway indexable "self,session:api-.*"
+```
+
+#### Capabilities
+
+Set what a session can do:
+
+```bash
+# Full capabilities
+wopr security session main capabilities "*"
+
+# Limited capabilities
+wopr security session sandbox capabilities "inject,inject.tools,session.history"
+```
+
+### Access Pattern Types
+
+| Pattern | Description |
+|---------|-------------|
+| `*` | Matches anyone |
+| `trust:owner` | Owner trust level only |
+| `trust:trusted` | Trusted or higher |
+| `trust:semi-trusted` | Semi-trusted or higher |
+| `trust:untrusted` | Any trust level |
+| `session:<name>` | From specific session |
+| `p2p:<publicKey>` | Specific P2P peer |
+| `type:<sourceType>` | By source type (cli, daemon, p2p, etc.) |
 
 ## Docker Sandbox Isolation
 
-Untrusted sources run in hardened Docker containers matching Clawdbot's security model.
+Untrusted sources can run in hardened Docker containers for isolation.
 
 ### Sandbox Configuration
 
@@ -115,170 +169,59 @@ docker run \
   --network none \                  # No network (prevents exfiltration)
   --cap-drop ALL \                  # Drop all Linux capabilities
   --security-opt no-new-privileges \  # Prevent privilege escalation
-  --security-opt seccomp=wopr-seccomp.json \  # Syscall filtering
-  --security-opt apparmor=wopr-sandbox \      # AppArmor profile
   --pids-limit 100 \                # Limit process count
   --memory 512m \                   # Memory limit
   --memory-swap 512m \              # No swap
   --cpus 0.5 \                      # CPU limit
   --ulimit nofile=1024:1024 \       # File descriptor limits
-  -v /workspace:/workspace:ro \     # Session workspace read-only
   wopr-sandbox:latest
 ```
 
-### Sandbox Architecture
+### Sandbox Configuration by Trust Level
 
-```
-+---------------------------------------------+
-|  Docker Container (sandbox)                 |
-|  +-------------------------------------+    |
-|  |  claude-code                        |    |
-|  |  - Can use Read, Write, Edit, Bash  |    |
-|  |  - BUT filesystem is read-only      |    |
-|  |  - AND network is blocked           |    |
-|  +----------------+--------------------+    |
-|                   | MCP over unix socket    |
-+-------------------+-------------------------+
-                    |
-+-------------------v-------------------------+
-|  WOPR Host (a2a-mcp server)                 |
-|                                             |
-|  Tool calls filtered by SecurityContext:    |
-|  - sessions_send -> DENIED (no cross.inject)|
-|  - http_fetch -> DENIED (no inject.network) |
-|  - memory_read -> ALLOWED (filtered paths)  |
-|  - security_whoami -> ALLOWED (always)      |
-+---------------------------------------------+
-```
+| Trust Level | Enabled | Network | Memory | CPU | Timeout |
+|-------------|---------|---------|--------|-----|---------|
+| `owner` | No | host | - | - | - |
+| `trusted` | No | host | - | - | - |
+| `semi-trusted` | Yes | bridge | 512MB | 0.5 | 300s |
+| `untrusted` | Yes | none | 256MB | 0.25 | 60s |
 
-### Key Sandbox Properties
-
-- Claude-code runs inside container with restricted filesystem/network
-- A2A tools are served by WOPR host (outside container)
-- WOPR filters which A2A tools are available based on session's capabilities
-- Even if claude-code tries `http_fetch`, WOPR denies it server-side
-- Container isolation + capability filtering = defense in depth
-
-## Gateway Session Model
-
-Untrusted sources cannot directly inject into privileged sessions. They must go through a gateway.
-
-### Gateway Flow
-
-```
-+-----------------+     +-----------------+     +-----------------+
-|  P2P Peer       |---->|  Gateway        |---->|  Privileged     |
-|  (untrusted)    |     |  (semi-trusted) |     |  (owner/trusted)|
-+-----------------+     +-----------------+     +-----------------+
-     inject              decides & forwards       executes
-```
-
-### Gateway Configuration
-
-```json
-{
-  "security": {
-    "gateway": {
-      "gatewaySessions": ["p2p-gateway", "public-api"],
-      "forwardRules": {
-        "p2p-gateway": {
-          "allowForwardTo": ["code-executor", "research-agent"],
-          "allowActions": ["query", "search", "analyze"],
-          "requireApproval": false,
-          "rateLimit": { "perMinute": 10 }
-        },
-        "public-api": {
-          "allowForwardTo": ["api-handler"],
-          "allowActions": ["query"],
-          "requireApproval": true,
-          "rateLimit": { "perMinute": 5 }
-        }
-      }
-    }
-  }
-}
-```
-
-### Gateway CLI Commands
+### Sandbox CLI Commands
 
 ```bash
-# List gateway sessions
-wopr security gateway list
-
-# Designate a session as a gateway
-wopr security gateway add <session>
-
-# View forward rules for a gateway
-wopr security gateway rules <session>
-
-# View pending approval requests
-wopr security gateway queue
-
-# Approve a pending request
-wopr security gateway approve <request-id>
-
-# Deny a pending request
-wopr security gateway deny <request-id>
+wopr sandbox status                 # Show sandbox status
+wopr sandbox list                   # List all containers
+wopr sandbox create <session>       # Create sandbox for session
+wopr sandbox destroy <session>      # Destroy sandbox
+wopr sandbox exec <session> <cmd>   # Execute in sandbox
+wopr sandbox prune                  # Remove idle containers
+wopr sandbox recreate <session>     # Recreate with new config
 ```
 
-### Gateway Responsibilities
+## P2P Security Configuration
 
-1. **Receive** - Accept injections from untrusted sources
-2. **Validate** - Check request against policy (allowed actions, rate limits)
-3. **Transform** - Sanitize/restructure requests before forwarding
-4. **Forward** - Inject into appropriate privileged session
-5. **Respond** - Return results to original requester
+### CLI Commands
 
-## Plugin Security
+```bash
+# Show P2P security settings
+wopr security p2p
 
-Plugins must declare their security requirements.
+# Set trust level for discovered peers
+wopr security p2p discovery-trust untrusted
 
-### Plugin Security Declaration
-
-```typescript
-const plugin: WOPRPlugin = {
-  name: "my-plugin",
-
-  // Declare required capabilities
-  requiredCapabilities: ["inject.network", "a2a.call"],
-
-  // Declare what trust level plugin operates at
-  trustLevel: "trusted",
-
-  async init(ctx) {
-    // Plugin's inject calls carry its trust level
-    ctx.inject("session", "message"); // Uses plugin's trust context
-  }
-};
+# Enable/disable auto-accept of peers
+wopr security p2p auto-accept false
 ```
-
-### Plugin Security Best Practices
-
-1. **Minimal Capabilities**: Request only capabilities you need
-2. **Trust Level Appropriateness**: Don't request `owner` unless absolutely necessary
-3. **Input Validation**: Validate all external inputs before processing
-4. **Error Handling**: Don't leak sensitive information in error messages
-5. **Audit Logging**: Log security-relevant events
-
-## P2P Security
-
-P2P introduces additional security considerations. See `wopr-p2p` skill for detailed P2P security configuration.
 
 ### P2P Security Defaults
 
 ```json
 {
-  "security": {
-    "p2p": {
-      "discoveryTrust": "untrusted",
-      "autoAccept": false,
-      "keyRotationGracePeriod": "24h",
-      "payloadSizeLimit": 1048576,
-      "rateLimits": {
-        "perSession": { "perMinute": 30 },
-        "perPeer": { "perMinute": 100 }
-      }
-    }
+  "p2p": {
+    "discoveryTrust": "untrusted",
+    "autoAccept": false,
+    "keyRotationGraceHours": 24,
+    "maxPayloadSize": 1048576
   }
 }
 ```
@@ -287,141 +230,83 @@ P2P introduces additional security considerations. See `wopr-p2p` skill for deta
 
 1. **Discovery default**: All discovered peers are `untrusted`
 2. **Auto-accept disabled**: Peers must be explicitly granted access
-3. **Gateway routing**: Discovered peers can ONLY inject to gateway sessions
-4. **Key rotation**: 24-hour grace period for rotated keys (not 7 days)
-5. **Rate limiting**: Per-session and per-peer rate limits enforced
+3. **Gateway routing**: Discovered peers should only inject to gateway sessions
+4. **Key rotation**: 24-hour grace period for rotated keys
+5. **Payload limits**: 1MB maximum payload size
 
-## Security Policy Configuration
+## Audit Logging
 
-### Full Configuration Example
+### Enable Audit
+
+```bash
+wopr security audit enable
+wopr security audit disable
+```
+
+### Audit Configuration
 
 ```json
 {
-  "security": {
-    "defaults": {
-      "sandbox": { "enabled": false },
-      "tools": { "deny": ["config.write"] }
-    },
-    "trustLevels": {
-      "owner": {
-        "capabilities": ["*"],
-        "sandbox": { "enabled": false }
-      },
-      "trusted": {
-        "capabilities": ["inject", "inject.tools", "session.spawn", "a2a.call"],
-        "sandbox": { "enabled": false }
-      },
-      "semi-trusted": {
-        "capabilities": ["inject", "inject.tools"],
-        "sandbox": { "enabled": true, "network": "restricted" }
-      },
-      "untrusted": {
-        "capabilities": ["inject"],
-        "sandbox": { "enabled": true, "network": "none" },
-        "tools": { "deny": ["*"] }
-      }
-    },
-    "p2p": {
-      "discoveryTrust": "untrusted",
-      "autoAccept": false
-    },
-    "gateway": {
-      "gatewaySessions": ["p2p-gateway"],
-      "forwardRules": {
-        "p2p-gateway": {
-          "allowForwardTo": ["*"],
-          "allowActions": ["*"],
-          "requireApproval": false,
-          "rateLimit": { "perMinute": 20 }
-        }
-      }
-    },
-    "enforcement": "enforce"
+  "audit": {
+    "enabled": true,
+    "logSuccess": false,
+    "logDenied": true
   }
 }
 ```
 
-### Enforcement Modes
+### Audit Events
 
-| Mode | Behavior |
-|------|----------|
-| `warn` | Log security violations but allow execution (migration mode) |
-| `enforce` | Block security violations (production mode) |
+| Event Type | Description |
+|------------|-------------|
+| `access_granted` | Access was allowed |
+| `access_denied` | Access was blocked |
+| `capability_check` | Capability was checked |
+| `sandbox_start` | Sandbox container started |
+| `sandbox_stop` | Sandbox container stopped |
+| `policy_violation` | Security policy violated |
+| `rate_limit_exceeded` | Rate limit hit |
+| `trust_elevation` | Trust level elevated |
+| `trust_revocation` | Trust level revoked |
 
-### CLI Security Commands
+## Tool to Capability Mapping
 
-```bash
-# View global security status
-wopr security status
+Each A2A tool requires specific capabilities:
 
-# View effective policy for a session
-wopr security status <session>
+| Tool | Required Capability |
+|------|---------------------|
+| `sessions_list` | `session.history` |
+| `sessions_send` | `cross.inject` |
+| `sessions_history` | `session.history` |
+| `sessions_spawn` | `session.spawn` |
+| `config_get` | `config.read` |
+| `config_set` | `config.write` |
+| `memory_read` | `memory.read` |
+| `memory_write` | `memory.write` |
+| `memory_search` | `memory.read` |
+| `cron_schedule` | `cron.manage` |
+| `cron_list` | `cron.manage` |
+| `event_emit` | `event.emit` |
+| `http_fetch` | `inject.network` |
+| `exec_command` | `inject.exec` |
+| `security_whoami` | `inject` (always allowed) |
+| `security_check` | `inject` (always allowed) |
 
-# Show current user's trust level
-wopr security whoami
-
-# Configure policy for a session
-wopr security policy set <session> --sandbox enabled
-wopr security policy set <session> --tools.deny "exec_command,http_fetch"
-
-# Configure trust level defaults
-wopr security policy set --trust-level untrusted --sandbox enabled
-
-# View security audit log
-wopr security audit
-wopr security audit --denied
-wopr security audit --last 100
-```
-
-## A2A Security Tools
-
-Agents can query their security context via A2A tools.
-
-### Available Security Tools
-
-```typescript
-// Query own security context
-"security_whoami"     // Returns trust level, capabilities, sandbox status
-
-// Check if action is allowed before attempting
-"security_check"      // Check specific capability
-
-// Request privilege elevation (queued for owner approval)
-"security_request"    // Request elevation
-
-// Gateway-only tools
-"gateway_forward"     // Forward request to privileged session
-"gateway_respond"     // Send response back to requester
-"gateway_queue"       // View pending requests
-```
-
-### Example: Checking Capabilities
-
-```typescript
-// Agent checks if it can make network requests
-const result = await security_check({ capability: "inject.network" });
-if (result.allowed) {
-  // Safe to proceed with http_fetch
-} else {
-  // Find alternative approach
-}
-```
-
-## Multi-Agent Security Best Practices
+## Security Best Practices
 
 ### 1. Principle of Least Privilege
 
-Grant only the capabilities each agent needs.
+Grant only the capabilities each session needs.
 
 ```bash
 # Research agent: needs network, no exec
-wopr security grant researcher-agent inject,inject.tools,inject.network
+wopr security session researcher capabilities "inject,inject.tools,inject.network,session.history"
 
 # Code executor: needs exec, no network
-wopr security grant code-agent inject,inject.tools,inject.exec
+wopr security session executor capabilities "inject,inject.tools,inject.exec,session.history"
 
 # Review agent: read-only, no tools
-wopr security grant review-agent inject
+wopr security session reviewer capabilities "inject,session.history"
 ```
 
 ### 2. Session Isolation
@@ -432,10 +317,6 @@ Use separate sessions for different trust levels.
 # Create isolated sessions
 wopr session create untrusted-handler "Handle untrusted requests"
 wopr session create trusted-executor "Execute trusted operations"
-
-# Set appropriate providers
-wopr session set-provider untrusted-handler openai --model gpt-4o-mini
-wopr session set-provider trusted-executor anthropic --model claude-sonnet-4-20250514
 ```
 
 ### 3. Gateway Pattern for External Input
@@ -443,68 +324,90 @@ wopr session set-provider trusted-executor anthropic --model claude-sonnet-4-202
 Route all external input through gateway sessions.
 
 ```bash
-# Set up gateway
-wopr security gateway add external-gateway
+# Create gateway session
+wopr session create external-gateway "You validate and filter external requests"
 
-# Configure forward rules
-wopr config set security.gateway.forwardRules.external-gateway.allowForwardTo '["internal-processor"]'
-wopr config set security.gateway.forwardRules.external-gateway.rateLimit.perMinute 10
+# Allow untrusted access
+wopr security session external-gateway access "trust:untrusted"
+
+# Give gateway cross-inject capability
+wopr security session external-gateway capabilities "inject,inject.tools,cross.inject,session.history"
 ```
 
 ### 4. Audit Everything
 
-Enable comprehensive audit logging.
+Enable audit logging for security visibility.
 
 ```bash
-# View recent security events
-wopr security audit
-
-# Filter by action type
-wopr security audit --denied
-wopr security audit --capability inject.exec
-
-# Export for analysis
-wopr security audit --format json --output security-events.json
+wopr security audit enable
 ```
 
-### 5. Regular Security Reviews
+### 5. Start with Warn Mode
+
+Use warn mode during migration to identify issues:
 
 ```bash
-# List all grants
-wopr security list-grants
+wopr security enforcement warn
+# Monitor for violations
+wopr security enforcement enforce  # Enable when ready
+```
 
-# Review gateway rules
-wopr security gateway rules --all
+## Enforcement Modes
 
-# Check for stale grants
-wopr security audit --stale-grants
+| Mode | Behavior |
+|------|----------|
+| `off` | No security enforcement (development only) |
+| `warn` | Log violations but allow execution (migration) |
+| `enforce` | Block violations (production) |
+
+## A2A Security Tools
+
+Agents can query their security context:
+
+```javascript
+// Query own security context
+security_whoami()
+// Returns: { trustLevel, capabilities, sandbox status }
+
+// Check if action is allowed
+security_check({ capability: "inject.network" })
+// Returns: { allowed: true/false, reason: "..." }
+```
+
+## Default Security Configuration
+
+```json
+{
+  "enforcement": "warn",
+  "defaults": {
+    "minTrustLevel": "semi-trusted",
+    "sandbox": { "enabled": false, "network": "host" },
+    "tools": { "deny": ["config.write"] },
+    "rateLimit": { "perMinute": 60, "perHour": 1000 }
+  },
+  "defaultAccess": ["trust:trusted"],
+  "p2p": {
+    "discoveryTrust": "untrusted",
+    "autoAccept": false,
+    "keyRotationGraceHours": 24,
+    "maxPayloadSize": 1048576
+  },
+  "audit": {
+    "enabled": true,
+    "logSuccess": false,
+    "logDenied": true
+  }
+}
 ```
 
 ## Verification Checklist
 
 Before enabling enforcement mode, verify:
 
-- [ ] All sessions have appropriate trust levels assigned
-- [ ] Gateway sessions are configured for external input
+- [ ] All sessions have appropriate access patterns configured
+- [ ] Gateway sessions are set up for external input
 - [ ] P2P auto-accept is disabled
-- [ ] Required capabilities are granted to trusted peers
 - [ ] Sandbox is enabled for untrusted/semi-trusted
-- [ ] Rate limits are configured
 - [ ] Audit logging is enabled
-- [ ] Forward rules are restrictive
-
-## Migration from Permissive Mode
-
-```bash
-# Step 1: Enable warning mode
-wopr config set security.enforcement warn
-
-# Step 2: Monitor audit log for violations
-wopr security audit --denied --since "1 week ago"
-
-# Step 3: Fix violations by granting needed capabilities
-wopr security grant <peer> <capabilities>
-
-# Step 4: Enable enforcement
-wopr config set security.enforcement enforce
-```
+- [ ] Rate limits are configured
+- [ ] Session indexable patterns are set appropriately

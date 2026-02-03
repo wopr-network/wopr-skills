@@ -1,6 +1,12 @@
 # WOPR Skills Registry
 
-Official skill registry for [WOPR](https://github.com/TSavo/wopr).
+Official skill registry for [WOPR](https://github.com/TSavo/wopr) - Self-sovereign AI session management over P2P.
+
+## Installation
+
+```bash
+npm install -g @tsavo/wopr
+```
 
 ## Usage
 
@@ -23,12 +29,12 @@ wopr skill install github:TSavo/wopr-skills/skills/<skill-name>
 
 | Skill | Description |
 |-------|-------------|
-| `wopr` | Complete WOPR CLI reference - all commands for sessions, skills, plugins, providers, middleware |
+| `wopr` | Complete WOPR CLI reference - sessions, skills, plugins, providers, middleware, cron, security, sandbox |
 | `meta-wopr` | Installation, configuration, daemon setup, Docker deployment, troubleshooting |
-| `wopr-security` | Security model - trust levels, capabilities, sandbox isolation, gateway sessions |
-| `wopr-p2p` | P2P networking - Hyperswarm, identity, discovery, access grants, security scenarios |
+| `wopr-security` | Security model - trust levels, capabilities, sandbox isolation, access patterns |
+| `wopr-p2p` | P2P networking plugin - Hyperswarm, identity, discovery, invites, encrypted messaging |
 
-## Quick Install All
+## Quick Install All Skills
 
 ```bash
 wopr skill registry add wopr github:TSavo/wopr-skills/skills

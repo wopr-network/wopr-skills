@@ -1,7 +1,7 @@
 ---
 name: wopr-p2p
 version: 1.0.0
-description: Comprehensive P2P networking for WOPR using Hyperswarm, identity management, topic-based discovery, and secure peer communication
+description: Comprehensive P2P networking plugin for WOPR using Hyperswarm, identity management, topic-based discovery, and secure peer communication
 category: network
 tags:
   - p2p
@@ -32,8 +32,6 @@ requires:
 
 The P2P plugin provides decentralized peer-to-peer networking for WOPR using Hyperswarm DHT. It enables secure communication between WOPR nodes without central servers, using Ed25519/X25519 cryptography for identity and encryption.
 
----
-
 ## Installation
 
 ```bash
@@ -41,15 +39,13 @@ The P2P plugin provides decentralized peer-to-peer networking for WOPR using Hyp
 wopr plugin install wopr-plugin-p2p
 
 # Enable the plugin
-wopr plugin enable p2p
+wopr plugin enable wopr-plugin-p2p
 
 # Verify installation
 wopr p2p status
 ```
 
-The plugin automatically creates a P2P identity on first use, stored at `~/.wopr/p2p/identity.json`.
-
----
+The plugin automatically creates a P2P identity on first use, stored at `~/.wopr/identity.json`.
 
 ## Core Concepts
 
@@ -63,7 +59,7 @@ Every WOPR node has a unique cryptographic identity:
 | Encryption Key | X25519 | Key exchange for E2E encryption |
 | Ephemeral Key | X25519 | Forward secrecy per session |
 
-Identity files are stored with `0600` permissions in `~/.wopr/p2p/`.
+Identity files are stored with `0600` permissions in `~/.wopr/`.
 
 ### Hyperswarm
 
@@ -75,15 +71,13 @@ The plugin uses Hyperswarm DHT for peer discovery and connection:
 
 ### Trust Model
 
-Peers are categorized by trust level:
+Peers are categorized by trust level (see `wopr-security` skill):
 
 | Level | Description | Capabilities |
 |-------|-------------|--------------|
 | Untrusted | Discovered via DHT | Gateway access only |
 | Semi-trusted | Claimed invite | Limited sessions |
 | Trusted | Explicit grant | Full access to specified sessions |
-
----
 
 ## CLI Commands
 
@@ -189,8 +183,6 @@ wopr p2p inject alice --session main --message "Analyze this code" --timeout 300
 - `log` - Notifications, status updates, fire-and-forget messages
 - `inject` - Questions, tasks, anything needing an AI response
 
----
-
 ## A2A Tools
 
 The plugin registers tools for agent-to-agent communication:
@@ -244,14 +236,6 @@ The plugin registers tools for agent-to-agent communication:
 | `p2p_inject_message` | Inject message and invoke peer's AI (get response back) |
 | `p2p_status` | Get P2P network status |
 
-### Session History (Mirror Access)
-
-| Tool | Description |
-|------|-------------|
-| `sessions_history` | Read session history with pagination. Use `full=true` for complete untruncated mirror |
-
----
-
 ## Security Scenarios
 
 ### Scenario 1: Trusted Peer Setup
@@ -279,11 +263,6 @@ wopr p2p invite claim "wop1://eyJ2Ijo..."
 wopr p2p name <nodeB-shortId> "my-laptop"
 ```
 
-**Security Properties:**
-- Wildcard session access (`*`)
-- Full `inject` capability
-- Mutual trust established
-
 ### Scenario 2: Semi-Trusted Peer (Limited Access)
 
 For collaborators who should only access specific sessions:
@@ -297,11 +276,6 @@ wopr p2p grants --peer <peer-id>
 # Confirm: sessions=["shared-project", "docs"]
 ```
 
-**Security Properties:**
-- Access limited to specified sessions
-- Token expires after 72 hours
-- No access to other sessions
-
 ### Scenario 3: Untrusted Discovery (Gateway Pattern)
 
 For unknown peers discovered via topics:
@@ -313,21 +287,15 @@ wopr p2p topic join public-agents
 # Discovered peers are NOT auto-accepted
 # They must go through a gateway session
 
-# Configure gateway session (in WOPR config)
-# gateway:
-#   enabled: true
-#   session: "public-gateway"
-#   capabilities: ["inject.limited"]
+# Create gateway session
+wopr session create public-gateway "You validate and filter external requests"
+
+# Allow untrusted access to gateway
+wopr security session public-gateway access "trust:untrusted"
 
 # Grant discovered peer gateway-only access
-wopr p2p grant <discovered-peer-key> public-gateway --capabilities "inject.limited"
+wopr p2p grant <discovered-peer-key> public-gateway --capabilities "inject"
 ```
-
-**Security Properties:**
-- Auto-accept DISABLED by default
-- Discovered peers require explicit grants
-- Gateway session filters/validates requests
-- Untrusted peers cannot access privileged sessions
 
 ### Scenario 4: Emergency Key Rotation
 
@@ -343,8 +311,6 @@ wopr p2p rotate --reason compromise --notify-all
 # 3. Notifies all known peers of the rotation
 # 4. Old key valid for 24-hour grace period only
 ```
-
----
 
 ## Key Rotation
 
@@ -371,30 +337,7 @@ When keys are rotated, old keys remain valid for a grace period:
 |--------|--------------|
 | scheduled | 24 hours |
 | upgrade | 24 hours |
-| compromise | 24 hours (reduced from 7 days) |
-
-The grace period allows in-flight messages to complete while minimizing exposure window.
-
-### Key History
-
-Peers maintain key history for continuity:
-
-```json
-{
-  "peerKey": "MCowBQ...",
-  "keyHistory": [
-    {
-      "publicKey": "MC0wBQ...",
-      "encryptPub": "MCwwBQ...",
-      "validFrom": 1704067200000,
-      "validUntil": 1704153600000,
-      "rotationReason": "scheduled"
-    }
-  ]
-}
-```
-
----
+| compromise | 24 hours |
 
 ## Rate Limiting
 
@@ -406,24 +349,17 @@ The plugin enforces per-peer rate limits to prevent abuse:
 | Claims | 5/minute, 20/hour | 1 hour |
 | Invalid Messages | 3/minute, 10/hour | 2 hours |
 
-```bash
-# Check if a peer is rate limited
-wopr p2p status --peer <peer-id>
-```
-
 When rate limited, peers receive a `reject` message with reason `"rate limited"`.
-
----
 
 ## Replay Protection
 
 Messages include nonces and timestamps to prevent replay attacks:
 
-```typescript
+```json
 {
-  nonce: "a1b2c3d4e5f6...",  // Random 16-byte hex
-  ts: 1704067200000,         // Timestamp
-  sig: "MEUCIQDn..."         // Ed25519 signature
+  "nonce": "a1b2c3d4e5f6...",
+  "ts": 1704067200000,
+  "sig": "MEUCIQDn..."
 }
 ```
 
@@ -431,8 +367,6 @@ Messages include nonces and timestamps to prevent replay attacks:
 **Max Tracked Nonces:** 10,000
 
 Messages older than 5 minutes or with previously-seen nonces are rejected.
-
----
 
 ## Payload Limits
 
@@ -442,10 +376,6 @@ To prevent memory exhaustion attacks:
 |-------|-------|-------------|
 | `MAX_PAYLOAD_SIZE` | 1 MB | Maximum encrypted payload |
 | `MAX_MESSAGE_SIZE` | ~1 MB + 4 KB | Payload + protocol overhead |
-
-Oversized messages are rejected before parsing.
-
----
 
 ## Forward Secrecy
 
@@ -462,10 +392,6 @@ Security Benefit:
   If long-term key compromised later,
   past messages remain secure
 ```
-
-Ephemeral keys have configurable TTL (default: 1 hour).
-
----
 
 ## Encryption
 
@@ -493,9 +419,7 @@ Ephemeral Keys (Forward Secrecy):
   Key = SHA256(SharedSecret)
 ```
 
----
-
-## Monitoring Peer Connections
+## Monitoring
 
 ### View Connection Status
 
@@ -512,8 +436,6 @@ wopr p2p events --follow
 
 ### Security Events
 
-The plugin emits events for monitoring:
-
 | Event | Description |
 |-------|-------------|
 | `p2p.peer.connected` | Peer connection established |
@@ -523,21 +445,7 @@ The plugin emits events for monitoring:
 | `p2p.grant.revoked` | Access grant revoked |
 | `p2p.key.rotated` | Peer key rotation processed |
 
-### Log Monitoring
-
-```bash
-# View P2P logs
-wopr logs --service p2p
-
-# Filter security events
-wopr logs --service p2p --filter "rejected\|revoked\|rotated"
-```
-
----
-
 ## Revoking Access
-
-### Revoke by Peer
 
 ```bash
 # Revoke all access for a peer
@@ -545,41 +453,24 @@ wopr p2p revoke alice
 
 # Revoke by public key
 wopr p2p revoke <peer-pubkey>
-```
 
-### Revoke by Grant
-
-```bash
-# List grants to find the grant ID
-wopr p2p grants
-
-# Revoke specific grant
-wopr p2p grant revoke <grant-id>
-```
-
-### Revoke Session Access
-
-```bash
-# Remove access to specific session
+# Revoke specific session access
 wopr p2p revoke alice --session sensitive-session
-
-# Peer keeps access to other sessions
 ```
 
 After revocation, the peer receives `reject` messages with reason `"unauthorized"`.
 
----
-
 ## Configuration
 
 ### Plugin Configuration
+
+In `~/.wopr/config.json`:
 
 ```json
 {
   "plugins": {
     "data": {
       "p2p": {
-        "uiPort": 7334,
         "discoveryTrust": "untrusted",
         "autoAccept": false,
         "keyRotationGraceHours": 24,
@@ -603,13 +494,11 @@ After revocation, the peer receives `reject` messages with reason `"unauthorized
 | `WOPR_P2P_MAX_PAYLOAD` | Max payload size (bytes) | `1048576` |
 | `WOPR_P2P_KEY_GRACE_HOURS` | Key rotation grace period | `24` |
 
----
-
 ## Best Practices
 
 ### Identity Security
 
-1. **Protect identity files**: Stored at `~/.wopr/p2p/identity.json` with `0600` permissions
+1. **Protect identity files**: Stored at `~/.wopr/identity.json` with `0600` permissions
 2. **Regular key rotation**: Rotate keys quarterly or after personnel changes
 3. **Immediate rotation on compromise**: Use `--reason compromise` if keys may be exposed
 
@@ -632,14 +521,6 @@ After revocation, the peer receives `reject` messages with reason `"unauthorized
 2. **Single-use invites**: Create new tokens for each peer
 3. **Secure token transmission**: Share tokens via encrypted channels
 
-### Monitoring
-
-1. **Enable event logging**: Monitor `p2p.*.rejected` events
-2. **Watch for patterns**: Multiple rejections may indicate attack
-3. **Regular status checks**: Verify expected peers are connected
-
----
-
 ## Troubleshooting
 
 ### Peer Not Found
@@ -656,21 +537,16 @@ wopr p2p find <public-key>
 
 ### Claim Failed
 
-```bash
-# Common causes:
-# 1. Issuer offline - they must be running WOPR
-# 2. Token expired - check expiration
-# 3. Token for wrong peer - check 'sub' field matches your pubkey
-
-# Debug token
-echo "wop1://..." | base64 -d | jq
-```
+Common causes:
+1. Issuer offline - they must be running WOPR
+2. Token expired - check expiration
+3. Token for wrong peer - check 'sub' field matches your pubkey
 
 ### Connection Timeout
 
 ```bash
 # Increase timeout for slow networks
-wopr p2p send alice --session main --message "test" --timeout 30s
+wopr p2p inject alice --session main --message "test" --timeout 30s
 
 # Check if peer is online
 wopr p2p discover --topic myproject
@@ -678,9 +554,8 @@ wopr p2p discover --topic myproject
 
 ### Rate Limited
 
+Wait for rate limit to expire (1-2 hours) or check peer status:
 ```bash
-# Wait for rate limit to expire (1-2 hours)
-# Or check peer status
 wopr p2p status --peer <peer-id>
 ```
 
@@ -693,8 +568,6 @@ wopr p2p grants --peer alice
 # Verify session access
 # Grants must include the target session or "*"
 ```
-
----
 
 ## Protocol Reference
 
@@ -730,54 +603,9 @@ wopr p2p grants --peer alice
 | 6 | `EXIT_PEER_OFFLINE` | Specific peer offline |
 | 7 | `EXIT_UNAUTHORIZED` | Not authorized |
 
----
-
-## Session Mirror
-
-Sessions are **permanent records** - they never compact or truncate. The AI's context window may summarize, but the session file (`*.conversation.jsonl`) contains every message forever.
-
-### Accessing the Full Mirror
-
-```bash
-# Quick summary (truncated, last 10 messages)
-sessions_history(session="my-session")
-
-# Full mirror with pagination
-sessions_history(session="my-session", full=true)              # First 100 messages
-sessions_history(session="my-session", full=true, offset=100)  # Next 100
-sessions_history(session="my-session", full=true, limit=50)    # 50 per page
-```
-
-**Response format (full mode):**
-```json
-{
-  "session": "my-session",
-  "total": 847,
-  "offset": 0,
-  "pageSize": 100,
-  "returned": 100,
-  "hasMore": true,
-  "nextOffset": 100,
-  "history": [
-    {
-      "ts": 1234567890,
-      "iso": "2024-01-15T12:00:00.000Z",
-      "from": "user",
-      "type": "message",
-      "content": "Complete untruncated content...",
-      "channel": { "type": "p2p", "id": "..." }
-    }
-  ]
-}
-```
-
-**Key insight:** Even when the AI's working memory compacts, the session file remains complete. Use `sessions_history(full=true)` to access the full record.
-
----
-
 ## Data Storage
 
-All P2P data stored in `~/.wopr/p2p/`:
+All P2P data stored in `~/.wopr/`:
 
 | File | Permissions | Content |
 |------|-------------|---------|
@@ -785,10 +613,8 @@ All P2P data stored in `~/.wopr/p2p/`:
 | `access.json` | `0600` | Access grants |
 | `peers.json` | `0600` | Known peers |
 
----
-
 ## Related Documentation
 
-- [WOPR Security Model](/skills/wopr-security/SKILL.md)
-- [WOPR Core](/skills/wopr/SKILL.md)
+- [WOPR Security Model](../wopr-security/SKILL.md)
+- [WOPR Core](../wopr/SKILL.md)
 - [Hyperswarm Documentation](https://github.com/hyperswarm/hyperswarm)

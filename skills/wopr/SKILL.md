@@ -1,11 +1,11 @@
 ---
 name: wopr
-description: Complete WOPR CLI reference for session management, skills, plugins, providers, middleware, and inter-agent communication.
+description: Complete WOPR CLI reference for session management, skills, plugins, providers, middleware, cron jobs, security, and sandbox isolation.
 ---
 
 # WOPR CLI Reference
 
-WOPR is an AI agent orchestration system. This is the complete command reference.
+WOPR is a self-sovereign AI session management system with P2P capabilities. This is the complete command reference.
 
 ## Setup & Configuration
 
@@ -73,8 +73,15 @@ wopr providers add <id> [credential]      # Add/update provider credential
 wopr providers remove <id>                # Remove provider credential
 wopr providers health-check               # Check health of all providers
 wopr providers default <id> [options]     # Set global provider defaults
+  --model <name>                          # Default model for this provider
+  --reasoning-effort <level>              # For Codex: minimal/low/medium/high/xhigh
 wopr providers show-defaults [id]         # Show global provider defaults
 ```
+
+### Supported Providers
+
+- `anthropic` - Claude models via Agent SDK
+- `codex` - OpenAI Codex agent for coding tasks
 
 ## Cron Jobs (Scheduled Messages)
 
@@ -99,8 +106,6 @@ cron_history successOnly=true             # Show only successes
 cron_history since=1706745600000          # Filter by timestamp (ms)
 cron_history limit=10 offset=20           # Pagination
 ```
-
-Returns: timestamp, job name, session, status, duration, error (if failed), and full message.
 
 ## Configuration
 
@@ -141,6 +146,61 @@ wopr daemon status                        # Check if daemon is running
 wopr daemon logs                          # Show daemon logs
 ```
 
+## Security
+
+```bash
+wopr security status                      # Show security status and enforcement mode
+wopr security enforcement <mode>          # Set enforcement mode (off|warn|enforce)
+
+wopr security sessions                    # List all session security configs
+wopr security session <name>              # Show session security config
+wopr security session <name> <prop> <val> # Set session property
+```
+
+### Session Security Properties
+
+```bash
+wopr security session main indexable "*"              # See all transcripts
+wopr security session p2p-alice indexable self        # Only own transcripts
+wopr security session gateway access "trust:untrusted"  # Allow untrusted
+wopr security session main capabilities "*"           # Full capabilities
+```
+
+### P2P Security
+
+```bash
+wopr security p2p                         # Show P2P security settings
+wopr security p2p discovery-trust <level> # Set trust for discovered peers
+wopr security p2p auto-accept <true|false> # Enable/disable auto-accept
+```
+
+### Audit
+
+```bash
+wopr security audit                       # Show audit settings
+wopr security audit enable                # Enable audit logging
+wopr security audit disable               # Disable audit logging
+```
+
+### Other Security Commands
+
+```bash
+wopr security sources                     # List source-specific configs
+wopr security defaults                    # Show default security policy
+```
+
+## Sandbox (Docker Isolation)
+
+```bash
+wopr sandbox status                       # Show sandbox status and containers
+wopr sandbox list                         # List all sandbox containers
+wopr sandbox create <session>             # Create sandbox for a session
+wopr sandbox destroy <session>            # Destroy sandbox for a session
+wopr sandbox exec <session> <command>     # Execute command in sandbox
+wopr sandbox prune                        # Remove all idle containers
+wopr sandbox recreate <session>           # Recreate container (apply config changes)
+```
+
 ## Common Workflows
 
 ### Send a message to another session
@@ -175,7 +235,7 @@ wopr skill install github:TSavo/wopr-skills/skills/git-essentials
 
 ### Switch AI model for a session
 ```bash
-wopr session set-provider my-session anthropic --model claude-sonnet-4-5-20250929
+wopr session set-provider my-session anthropic --model claude-sonnet-4-20250514
 ```
 
 ## A2A Tools Reference
@@ -186,7 +246,7 @@ These tools are available to agents within WOPR sessions:
 - `sessions_list` - List all sessions
 - `sessions_spawn` - Create a new session (requires session.spawn capability)
 - `sessions_send` - Send message to another session (requires cross.inject capability)
-- `sessions_terminate` - Terminate a session
+- `sessions_history` - Read session history (requires session.history capability)
 
 ### Cron/Scheduling
 - `cron_schedule` - Schedule a recurring cron job
@@ -198,19 +258,52 @@ These tools are available to agents within WOPR sessions:
 ### Memory
 - `memory_read` - Read from persistent memory
 - `memory_write` - Write to persistent memory
-- `memory_list` - List memory keys
-- `memory_delete` - Delete memory entries
+- `memory_search` - Search memory
+- `memory_get` - Get specific memory entry
+
+### Identity & Soul
+- `identity_get` - Get agent identity
+- `identity_update` - Update agent identity
+- `soul_get` - Get agent soul/persona
+- `soul_update` - Update agent soul/persona
+- `self_reflect` - Self-reflection and memory update
 
 ### Events
 - `event_emit` - Emit a custom event
-- `event_subscribe` - Subscribe to events
-- `event_unsubscribe` - Unsubscribe from events
+- `event_list` - List event subscriptions
 
 ### Network
-- `http_fetch` - Make HTTP requests with arbitrary headers (Authorization, API keys, etc.). Options: `url`, `method`, `headers`, `body`, `timeout`, `includeHeaders`
+- `http_fetch` - Make HTTP requests (requires inject.network capability)
 
 ### Execution
 - `exec_command` - Execute shell commands (requires inject.exec capability)
 
+### Configuration
+- `config_get` - Read configuration
+- `config_set` - Modify configuration (requires config.write capability)
+- `config_provider_defaults` - Manage provider defaults
+
 ### Utility
 - `security_whoami` - Show current trust level and capabilities
+- `security_check` - Check if a specific capability is available
+- `notify` - Send notifications
+
+## Environment Variables
+
+```bash
+WOPR_HOME                                 # Base directory (default: ~/.wopr)
+ANTHROPIC_API_KEY                         # API key for Claude (Anthropic)
+OPENAI_API_KEY                            # API key for Codex (OpenAI)
+WOPR_DAEMON_PORT                          # Daemon port (default: 7437)
+WOPR_DAEMON_HOST                          # Daemon host (default: 127.0.0.1)
+```
+
+## P2P Plugin
+
+For P2P networking capabilities, install the P2P plugin:
+
+```bash
+wopr plugin install wopr-plugin-p2p
+```
+
+See the `wopr-p2p` skill for complete P2P documentation.
