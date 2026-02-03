@@ -1,6 +1,6 @@
 ---
 name: wopr
-description: Complete WOPR CLI reference for session management, skills, plugins, providers, middleware, cron jobs, security, and sandbox isolation.
+description: Complete WOPR CLI reference for session management, skills, plugins, providers, middleware, cron jobs, security, sandbox isolation, and inter-agent communication.
 ---
 
 # WOPR CLI Reference
@@ -255,11 +255,34 @@ These tools are available to agents within WOPR sessions:
 - `cron_cancel` - Cancel a scheduled cron job
 - `cron_history` - View cron execution history with filtering and pagination
 
-### Memory
-- `memory_read` - Read from persistent memory
-- `memory_write` - Write to persistent memory
-- `memory_search` - Search memory
-- `memory_get` - Get specific memory entry
+### Memory & Semantic Search
+- `memory_read` - Read from persistent memory files
+- `memory_write` - Write to persistent memory files
+- `memory_search` - **Semantic search** across memory files AND session transcripts
+- `memory_get` - Get specific memory entry with line ranges
+
+#### Memory Search Details
+
+The `memory_search` tool performs vector similarity search using OpenAI embeddings (`text-embedding-3-small`). It indexes:
+
+- **Global memory files** (`/data/identity/memory/*.md`)
+- **Session memory files** (per-session memory)
+- **Session transcripts** (all `.conversation.jsonl` files)
+
+```
+memory_search query="consciousness debate Alvin"     # Semantic search
+memory_search query="PR merge GitHub" maxResults=10  # With result limit
+```
+
+Results include relevance scores (0-1) and source file paths.
+
+**Configuration:**
+```bash
+wopr config set memory.embeddings.provider openai
+wopr config set memory.embeddings.apiKey $OPENAI_API_KEY
+wopr config set memory.sync.indexSessions true       # Index session transcripts
+wopr config set memory.sync.onSearch true            # Lazy sync before search
+```
 
 ### Identity & Soul
 - `identity_get` - Get agent identity
